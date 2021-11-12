@@ -1,0 +1,21 @@
+{
+  "name": "ast-analysis",
+  "version": "1.0.0",
+  "description": "ast analysis",
+  "main": "index.js",
+  "author": "theunclehonnor <jekbormoley@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/core": "^7.16.0",
+    "acorn": "6.4.1",
+    "acorn-walk": "6.2",
+    "babel-core": "^6.26.3",
+    "babel-jest": "^27.3.1"
+  },
+  "devDependencies": {
+    "jest": "^27.3.1"
+  },
+  "scripts": {
+    "test": "jest"
+  }
+}
