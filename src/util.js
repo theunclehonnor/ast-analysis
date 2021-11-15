@@ -3,12 +3,12 @@ const walk = require('acorn-walk')
 const fs = require('fs')
 
 /**
- * @param {string} pathToJsFile
+ * @param {string} pathToFile
  * @returns {Promise<string>}
  */
-function transformJsFileToText (pathToJsFile) {
+function readFile (pathToFile) {
     return new Promise(function (resolve, reject) {
-        fs.readFile(pathToJsFile, 'utf8',function(error, data) {
+        fs.readFile(pathToFile, 'utf8',function(error, data) {
             if (error) {
                 reject(error)
             }
@@ -19,43 +19,42 @@ function transformJsFileToText (pathToJsFile) {
 }
 
 /**
- * @param {Object} property
- * @param {string} parent
- * @param {Map<string, string>} map
- * @returns {string[]}
+ * @param {Property} property
+ * @param {string|null} parentPath
+ * @param {Map<string, string>} pathsMap
+ * @returns {string}
  */
-function checkBeforeAddingToMap (property, parent, map) {
+function getPath (property, parentPath, pathsMap) {
     if ('ObjectExpression' !== property.value.type) {
-        if (parent && map.has(parent)) {
-            const val = map.get(parent) + '.' + property.key.name
-
-            return [val, val]
-        } else {
-            return [property.key.name, property.key.name]
+        if (parentPath && pathsMap.has(parentPath)) {
+            return pathsMap.get(parentPath) + '.' + property.key.name
         }
-    } else {
-        if (parent) {
-            const val = parent + '.' + property.key.name
 
-            return [val, val]
-        } else {
-            return [property.key.name, property.key.name]
-        }
+        return property.key.name
+    } else if (parentPath) {
+        return parentPath + '.' + property.key.name
     }
+
+    return property.key.name
 }
 
 /**
- * @param {Map<string, string>} map
- * @returns {[]}
+ * @param {Property} property
+ * @return {boolean}
  */
-function convertMapToArray (map) {
-    const resultList = []
-    for (let res of map.values()) {
-        resultList.push(res);
-    }
+const isStringLiteral = property => property.value.type === 'Literal' && typeof property.value.value === 'string'
 
-    return resultList
-}
+/**
+ * @param {Property} property
+ * @return {boolean}
+ */
+const isFunction = property => ['FunctionExpression', 'ArrowFunctionExpression'].includes(property.value.type)
+
+/**
+ * @param {Property} property
+ * @return {boolean}
+ */
+const isObject = property => property.value.type === 'ObjectExpression'
 
 /**
  * @param {string} pathToJsFile
@@ -64,44 +63,30 @@ function convertMapToArray (map) {
 module.exports = async function (pathToJsFile) {
     const map = new Map()
 
-    const ast = acorn.parse(await transformJsFileToText(pathToJsFile))
+    const ast = acorn.parse(await readFile(pathToJsFile))
 
     walk.recursive(ast, null, {
-        ObjectExpression (node, state, c) {
-            let parent = state
+        ObjectExpression (node, parentPath, c) {
+            node.properties.forEach(property => {
+                let path
 
-            node.properties.forEach((property) => {
-                let key, value
-                switch (property.value.type) {
-                    case 'Literal':
-                        if ('string' === typeof property.value.value) {
-                            [key, value] = checkBeforeAddingToMap(property, parent, map)
+                const add = path => map.set(path, path)
 
-                            map.set(key, value)
-                        }
-                        break
-                    case 'FunctionExpression':
-                    case 'ArrowFunctionExpression':
-                        [key, value] = checkBeforeAddingToMap(property, parent, map)
+                if ([isFunction, isObject, isStringLiteral].some(fn => fn(property))) {
 
-                        map.set(key, value)
-                        break
-                    case 'ObjectExpression':
-                        [key, value] = checkBeforeAddingToMap(property, parent, map)
-
-                        map.set(key, value)
-                        c(property, value)
-
-                        break
+                    add(path = getPath(property, parentPath, map))
+                    if (isObject(property)) {
+                        c(property, path)
+                    }
                 }
             })
 
-            // удалить родителя, после того как все листы на данной итерации были созданы
-            if (parent && map.has(parent)) {
-                map.delete(parent)
+            // удалить путь родителя, после того как все пути вложенных в него свойств были сформированы
+            if (parentPath && map.has(parentPath)) {
+                map.delete(parentPath)
             }
         },
     })
 
-    return convertMapToArray(map)
+    return Array.from(map.values())
 }
